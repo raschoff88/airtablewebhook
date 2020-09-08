@@ -1,0 +1,29 @@
+[[source]]
+name = "pypi"
+url = "https://pypi.org/simple"
+verify_ssl = true
+
+[dev-packages]
+
+[packages]
+django = "*"
+python-dotenv = "*"
+airtable-python-wrapper = "*"
+numpy = "*"
+sendgrid = "*"
+ipython = "*"
+gunicorn = "*"
+dj-database-url = "*"
+gspread = "*"
+google-api-python-client = "*"
+psycopg2-binary = "*"
+django-heroku = "*"
+redis = "*"
+django-redis-cache = "*"
+oauth2client = "*"
+celery = "*"
+simple-salesforce = "*"
+twilio = "*"
+
+[requires]
+python_version = "3.8"
