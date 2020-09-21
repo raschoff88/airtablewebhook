@@ -12,6 +12,8 @@ from .SalesforceEventHandler import (
     deleteStopInAirtable, baseExistsInAirtable, updateEntryInDatabaseFromJson,
     repollRouteInSalesforce, jsonize, anyUpdates, partition, anyDuplicates
 )
+import pytz
+import pandas as pd
 from json import dumps
 from datetime import datetime,timedelta
 from simple_salesforce import Salesforce
@@ -30,7 +32,7 @@ def pollAirtableForUpdates():
     availableBases = [e for e in BaseNamesInUsage.objects.all()]
     # get entries from Airtable
     for availableBase in availableBases:
-        if (datetime.now().date() - availableBase.date) > timedelta(days = 30):
+        if (datetime.now(pytz.timezone("US/Eastern")).date() - availableBase.date) > timedelta(days = 30):
             availableBase.delete()
             availableBases.remove(availableBase)
 
@@ -48,7 +50,7 @@ def pollAirtableForUpdates():
     post = {
         "method" : "ROUTE_UPDATE",
         "data"   :  myobj,
-        "updateDate"   : str(datetime.now().date())
+        "updateDate"   : str(datetime.now(pytz.timezone("US/Eastern")).date())
     }
     print("post is: " + str(post))
     sf = Salesforce(username = os.environ["SALESFORCE_OAUTH_USERNAME"], password = os.environ["SALESFORCE_OAUTH_PASSWORD"], security_token = os.environ['SALESFORCE_SECURITY_TOKEN'])
@@ -66,7 +68,7 @@ def putInSalesforceStyleJSON (base_data):
         stop["method"]            = stop.pop("Method","Stop Updated")
         stop["phoneNumber"]       = stop.pop("Phone Number","")
         stop["bottlesToDeliver"]  = stop.pop("Bottles to Deliver",0)
-        stop["stopDate"]          = stop.pop("Date",str(datetime.now().date()))
+        stop["stopDate"]          = stop.pop("Date",str(datetime.now(pytz.timezone("US/Eastern")).date()))
         stop["aptNumber"]         = stop.pop("Apt. #", "")
         stop["equipmentInfo"]     = stop.pop("Equipment Info","")
         stop["delivered"]         = stop.pop("Delivered?",False)
@@ -89,7 +91,7 @@ def pollBaseForUpdates(base_id, base_name):
         Returns records to be updated in Salesforce.
     """
 
-    oldDjangoData = AirtableEntry.objects.filter(base_name__exact = base_id, stop_date__lte = (datetime.now().date() - timedelta(days = 2)))
+    oldDjangoData = AirtableEntry.objects.filter(base_name__exact = base_id, stop_date__lte = (datetime.now(pytz.timezone("US/Eastern")).date() - timedelta(days = 2)))
     for oldDjangoEntry in oldDjangoData:
         oldDjangoEntry.delete()
 
@@ -101,12 +103,12 @@ def pollBaseForUpdates(base_id, base_name):
         airtableEntry["fields"]["Airtable Id"] = airtableEntry["id"] 
 
     # Filters out entries whose date is not today.
-    airtableData = [airtableEntry["fields"] for airtableEntry in airtableData if datetime.strptime(airtableEntry["fields"]["Date"],"%Y-%m-%d").date() == datetime.now().date()]
+    airtableData = [airtableEntry["fields"] for airtableEntry in airtableData if "Date" in airtableEntry["fields"] and datetime.strptime(airtableEntry["fields"]["Date"],"%Y-%m-%d").date() == datetime.now().date()]
     # Filters out entries with no Salesforce Id.
     airtableData = list(filter(lambda x: "Salesforce Id" in x.keys(),airtableData)) 
 
     # Gets all Django Database Entries for the base_name and today
-    djangoData = list(AirtableEntry.objects.filter(base_name__exact = base_id, stop_date__exact = datetime.now().date()))
+    djangoData = list(AirtableEntry.objects.filter(base_name__exact = base_id, stop_date__exact = datetime.now(pytz.timezone("US/Eastern")).date()))
 
     salesforce_updates, database_fixes = [], []
 
@@ -129,7 +131,7 @@ def pollBaseForUpdates(base_id, base_name):
             airtableEntry["Stop Number"] = airtableEntry["Stop Number"] if "Stop Number" in airtableEntry.keys() else 0
             airtableEntry["Name"] = airtableEntry["Name"] if "Name" in airtableEntry.keys() else ""
             airtableEntry["Address"] = airtableEntry["Address"] if "Address" in airtableEntry.keys() else ""
-            airtableEntry["Date"] = airtableEntry["Date"] if "Date" in airtableEntry.keys() else str(datetime.now().date())
+            airtableEntry["Date"] = airtableEntry["Date"] if "Date" in airtableEntry.keys() else str(datetime.now(pytz.timezone("US/Eastern")).date())
             airtableEntry["Attachments"] = airtableEntry["Attachments"][0]["url"] if "Attachments" in airtableEntry.keys() else ""
             airtableEntry["BPA Free"] = airtableEntry["BPA Free"] if "BPA Free" in airtableEntry.keys() else "No"
             airtableEntry["Water Type"] = airtableEntry["Water Type"] if "Water Type" in airtableEntry.keys() else "Alkaline"
@@ -169,7 +171,7 @@ def pollBaseForUpdates(base_id, base_name):
         
         req = {
             "Method"      : "ROUTE_UPDATE",
-            "Date"        : str(datetime.now().date()),
+            "Date"        : str(datetime.now(pytz.timezone("US/Eastern")).date()),
             "Base Name"   : base_name,
             "Route Stops" : airtableData
         }
@@ -222,7 +224,7 @@ def duplicateStops(airtableData):
 
 
 
-
+'''
 def updateDailyReport():
     availableBases = [e for e in BaseNamesInUsage.objects.all()]
     availableBases.sort(key = lambda x: x.base_name)
@@ -237,16 +239,14 @@ def updateDailyReport():
     summaryTable = sheet.values().get(spreadsheetId = spreadsheetId,
                                             range = f"Summary!A3:{column_string(len(availableBases)+2)}").execute().get("values",[])
     updateBody = deepcopy(summaryTable[:10])
-    updateBody[0][0]= str(datetime.now().date())
+    updateBody[0][0]= str(datetime.now(pytz.timezone("US/Eastern")).date())
 
-    print(str(summaryTable))
 
     table = [[*x,i] for i,x in enumerate(summaryTable)]
     tenthElement = list(filter(lambda x: x[-1]%10==0,table))
-    dateTable = list(takewhile(lambda x:(datetime.now()-datetime.strptime(x[0], '%m/%d/%Y'))<=timedelta(days=31) if x[0] else True, tenthElement))
-    print(dateTable)
+    dateTable = list(takewhile(lambda x:(datetime.now(pytz.timezone("US/Eastern"))-datetime.strptime(x[0], '%m/%d/%Y').replace(tzinfo = pytz.timezone("US/Eastern")))<=timedelta(days=31) if x[0] else True, tenthElement))
+
     dateTable = list(takewhile(lambda x: int(x[-1]) < int(dateTable[-1][-1]),table))
-    dateTable = [[x[:-1]] for x in dateTable]
 
     updateBody += dateTable
 
@@ -332,9 +332,8 @@ def updateDailyReport():
         if (airtableData:=baseExistsInAirtable(availableBase.base_id)):
             airtableData = airtableData["records"]
             airtableData = [airtableEntry["fields"] for airtableEntry in airtableData]
-            print(airtableData)
-            airtableData = list(filter(lambda x: datetime.strptime(x["Date"],"%Y-%m-%d").date() == (datetime.now()-timedelta(days=1)).date(), airtableData))
-            print(airtableData)
+            airtableData = [airtableEntry for airtableEntry in airtableData if "Date" in airtableEntry.keys()]
+            airtableData = list(filter(lambda x: datetime.strptime(x["Date"],"%Y-%m-%d").date() == (datetime.now(pytz.timezone("US/Eastern"))-timedelta(days=1)).date(), airtableData))
             for airtableEntry in airtableData:
                 airtableEntry["Delivered?"] = airtableEntry["Delivered?"] if "Delivered?" in airtableEntry.keys() else False
                 airtableEntry["Apt. #"] = airtableEntry["Apt. #"] if "Apt. #" in airtableEntry.keys() else ''
@@ -348,7 +347,7 @@ def updateDailyReport():
                 airtableEntry["Stop Number"] = airtableEntry["Stop Number"] if "Stop Number" in airtableEntry.keys() else 0
                 airtableEntry["Name"] = airtableEntry["Name"] if "Name" in airtableEntry.keys() else ""
                 airtableEntry["Address"] = airtableEntry["Address"] if "Address" in airtableEntry.keys() else ""
-                airtableEntry["Date"] = airtableEntry["Date"] if "Date" in airtableEntry.keys() else str(datetime.now().date())
+                airtableEntry["Date"] = airtableEntry["Date"] if "Date" in airtableEntry.keys() else str(datetime.now(pytz.timezone("US/Eastern")).date())
                 airtableEntry["Attachments"] = airtableEntry["Attachments"][0]["url"] if "Attachments" in airtableEntry.keys() else ""
                 airtableEntry["BPA Free"] = airtableEntry["BPA Free"] if "BPA Free" in airtableEntry.keys() else "No"
                 airtableEntry["Water Type"] = airtableEntry["Water Type"] if "Water Type" in airtableEntry.keys() else "Alkaline"
@@ -359,7 +358,7 @@ def updateDailyReport():
 
             stops_with_attachments = sum([1 if x["Attachments"] else 0 for x in airtableData])
             
-            dateTable = list(takewhile(lambda x:(datetime.now().date()-datetime.strptime(x[6], '%Y-%m-%d'))<=timedelta(days=31) if x[6] else True, tableEntries))
+            dateTable = list(takewhile(lambda x:(datetime.now(pytz.timezone("US/Eastern"))-datetime.strptime(x[6], '%m/%d/%Y' if '/' in x[6] else '%Y-%m-%d').replace(tzinfo = pytz.timezone("US/Eastern")))<=timedelta(days=31) if x[6] else True, tableEntries))
 
             updateEntries = [[x["Name"],x["Address"],x["Delivered?"],
                               x["Bottles Dropped Off"], x["Bottles Picked Up"],
@@ -367,7 +366,7 @@ def updateDailyReport():
                               x["Phone Number"],x["Apt. #"],
                               x["Bottles to Deliver"], x["Equipment Info"],
                               x["BPA Free"],x["Water Type"]] for x in airtableData]
-            print(updateEntries)
+
             if updateEntries:
                 bottles_delivered = sum([int(x[3]) for x in updateEntries])
                 bottles_picked_up  = sum([int(x[4]) for x in updateEntries])
@@ -394,13 +393,27 @@ def updateDailyReport():
                 pick_up_completion = "N/A"
                 percent_picked_up = "N/A"
                 drop_off_completion = "N/A"
-                percent_with_attachments = "N/A"                
-            
+                percent_with_attachments = "N/A"            
+
+            dateTable = [[*x[:2],x[2].lower() == "true",*x[3:]] for x in dateTable]
             updateEntries+=dateTable
 
+            print(updateEntries)
             if updateEntries:
                 average_route_completion = sum([1 if x[2] else 0 for x in updateEntries])/len(updateEntries)
-                average_route_consistency = stdev([1 if x[2] else 0 for x in updateEntries])
+                df = pd.DataFrame(updateEntries)
+
+                dailySummary=[]
+                for _,x in df.groupby(df[6]):
+                    if (y:= sum([int(x.iloc[i,10]) for i in range(len(x)) if x.iloc[i,2]])) > 0:
+                        dailySummary.append(sum([int(x.iloc[i,3]) for i in range(len(x)) if x.iloc[i,2]])/y)
+                    else:
+                        dailySummary.append(1)
+                if len(dailySummary)>2:
+                    average_route_consistency = stdev(dailySummary)
+                else:
+                    average_route_consistency = 'N/A'
+
             else:
                 average_route_completion = "N/A"
                 average_route_consistency = "N/A"
@@ -443,3 +456,5 @@ def column_string(n):
         n, remainder = divmod(n - 1, 26)
         string = chr(65 + remainder) + string
     return string
+
+'''

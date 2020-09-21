@@ -12,15 +12,6 @@ def updateRoute(request):
 def deleteRoute(request):
     return handleRouteDelete(request)
 
-'''
-from .periodic import pollAirtableForUpdates
-@shared_task
-def updateAirtable():
-    return pollAirtableForUpdates()
-'''
-@shared_task
-def add(x, y):
-    return x + y
 
 @app.on_after_configure.connect
 def setup_periodic_tasks(sender, **kwargs):
@@ -29,17 +20,20 @@ def setup_periodic_tasks(sender, **kwargs):
         crontab(minute=30),
         runUpdatesOnAirtable.s()
     )
-    sender.add_periodic_task(
-        crontab(hour = 3),
-        runDailyReport.s()
-    )
+    # Executes every morning at 12 am.
+    #sender.add_periodic_task(
+    #    crontab(hour = 0),
+    #    runDailyReport.s()
+    #)
 
-from .periodic import pollAirtableForUpdates, updateDailyReport
+from .periodic import pollAirtableForUpdates #, updateDailyReport
 @app.task
 def runUpdatesOnAirtable():
     return pollAirtableForUpdates()
 
+'''
 @app.task
 def runDailyReport():
     return updateDailyReport()
 
+'''

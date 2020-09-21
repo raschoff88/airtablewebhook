@@ -12,6 +12,7 @@ from sendgrid.helpers.mail import Mail
 from googleapiclient import discovery
 from google.auth.transport.requests import Request
 from itertools import tee, filterfalse
+import pytz
 import pickle
 
 def checkBaseUsage(func):
@@ -70,7 +71,7 @@ def addFutureStopsToDatabase(func):
 
         # Filters changes on routes before today to be ignored.
         date = datetime.strptime(request["Date"],"%Y-%m-%d").date()
-        if date < datetime.now().date():
+        if date < datetime.now(pytz.timezone("US/Eastern")).date():
             sendErrorEmail(error = "It seems you are attempting to update a route whose date has already passed. Was this intentional?")
             return True
         
@@ -112,7 +113,7 @@ def addFutureStopsToDatabase(func):
                 stop["Django Id"] = match.django_id
                 # If the stop has been marked for removal, and the date is today, adds to salesforce_updates.
                 if "Method" in stop.keys() and stop["Method"] == "Stop Removed":
-                    if datetime.strptime(request["Date"],"%Y-%m-%d").date() == datetime.now().date():
+                    if datetime.strptime(request["Date"],"%Y-%m-%d").date() == datetime.now(pytz.timezone("US/Eastern")).date():
                         airtable_updates.append(stop)
 
                 # If the stop has any changes from its match, remove the match from the db_route
@@ -120,7 +121,7 @@ def addFutureStopsToDatabase(func):
 
                     db_route.remove(match)
                     # If the stop is on the current route, add to airtable_updates (where the updating will occur).
-                    if date == datetime.now().date():
+                    if date == datetime.now(pytz.timezone("US/Eastern")).date():
                         print("Adding stop " + stop["Name"])
                         airtable_updates.append(stop)
                     # otherwise this is a future stop and can just be directly updated in the database.
@@ -131,16 +132,16 @@ def addFutureStopsToDatabase(func):
             # If there is no match found for the stop        
             else:
                 # If the stop is for the future, insert into the Database.
-                if date > datetime.now().date():
+                if date > datetime.now(pytz.timezone("US/Eastern")).date():
                     insertEntryInDatabaseFromJson(request["Base Name"], stop, method = "Not Inserted")
                 # Otherwise, the stop is for today. Adds to airtable_updates, which is passed to handleRouteUpdate.
-                elif date == datetime.now().date():
+                elif date == datetime.now(pytz.timezone("US/Eastern")).date():
                     airtable_updates.append(stop)
         # Whatever hasn't been matched, means that it is not on the current version of the route, which means it should be deleted.  
         airtable_updates+=jsonize(db_route, method = "Stop Removed")
         print(str(airtable_updates) + "dfafdsa")
         # creates a new request object that passes on this information.
-        if date == datetime.now().date():
+        if date == datetime.now(pytz.timezone("US/Eastern")).date():
             updateDatabase(request["Base Name"],airtable_updates)
             request = {
                 "Method"      : "ROUTE_UPDATE",
@@ -162,7 +163,7 @@ def handleRouteUpdate(request):
     air = Airtable(request["Base Name"],"Table 1", os.environ['AIRTABLE_APIKEY'])
     
     (routeStops := list(AirtableEntry.objects.filter(base_name__exact = request["Base Name"],
-                                            stop_date__exact = datetime.now().date()))).sort(key = lambda x: x.stop_number)
+                                            stop_date__exact = datetime.now(pytz.timezone("US/Eastern")).date()))).sort(key = lambda x: x.stop_number)
 
     # Retrieves all records from the database associated with the table and
     # the route date.
@@ -208,7 +209,7 @@ def handleRouteDelete(request):
     updateDatabase(request["Base Name"], jsonize(routeStops, method = "Stop Removed"))
 
     # Deletes the records from Airtable.
-    if  datetime.strptime(request["Date"],"%Y-%m-%d").date() == datetime.now().date():
+    if  datetime.strptime(request["Date"],"%Y-%m-%d").date() == datetime.now(pytz.timezone("US/Eastern")).date():
         air = Airtable(request["Base Name"],"Table 1", os.environ['AIRTABLE_APIKEY'])
         for stop in air.get_all():
             deleteStopInAirtable(air,stop["id"])
